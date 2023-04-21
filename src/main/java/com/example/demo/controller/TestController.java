@@ -1,57 +1,79 @@
 package com.example.demo.controller;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import com.example.demo.domain.service.UserService;
+import com.example.demo.service.AsyncServiceErrorHandle;
+import com.example.demo.service.AsyncServiceGeneration;
+import com.example.demo.service.AsyncServicePostProcessing;
 
-@Controller
+import lombok.extern.slf4j.Slf4j;
+
+@RestController
+@Slf4j
 public class TestController {
-	/** @Service/@Repository/@Componetを付与したクラスを使用可 */
-	@Autowired
-	UserService service;
 
-	/** @RequestMappingでも同じ。 */
-	@GetMapping("/test")
-//	@RequestMapping(value="/test", method=RequestMethod.GET)
-	public String getIndex()  {
-		return "/index";
-	}
+	@Autowired 
+	private AsyncServiceGeneration generationService;
+	@Autowired 
+	private AsyncServicePostProcessing postProcessingService;
+	@Autowired 
+	private AsyncServiceErrorHandle errorHandleService;
 
-	/** Stringやintなどの型で受け取る場合 */
-	@PostMapping("/user")
-//	@RequestMapping(value="/user", method=RequestMethod.POST)
-	public String postIndex(@RequestParam("id")int id, Model model) {
+	Logger log = LoggerFactory.getLogger(TestController.class);
+
+	@RequestMapping(value = "asyncTest", method = RequestMethod.GET)
+    public void asyncProcess() throws InterruptedException {
+
+		/** joinの実行 */ 
+		// CompletableFutureクラスの生成
+		// 上記で生成したrunTestの処理にさらに付け足す。
+		CompletableFuture<Void> runAsyncSample = generationService.runAsyncSample("completedFuture TEST");
+		CompletableFuture<Void> thenRunSample = postProcessingService.thenRunSample(runAsyncSample, "==========");
+		thenRunSample.join();
+
+		/** getの実行 */ 
+		// CompletableFutureクラスの生成
+		CompletableFuture<String> supplyAsyncSample = generationService.supplyAsyncSample("田中", "太郎");
 		try {
-			String name =  service.getUser(id);
-			model.addAttribute("name", name);
-			return "/response";
-		} catch(Exception e) {
-			// DBエラーが発生したら、エラーがめんへ。
+			// get()で実行結果を取得する
+			log.info(supplyAsyncSample.get());
+		} catch (InterruptedException | ExecutionException e) {
 			e.printStackTrace();
-			return "/error";
 		}
-	}
 
-	/** オブジェクトで受け取る場合 */
-//	@RequestMapping(value="/user", method=RequestMethod.POST)
-//	public String postIndex(@ModelAttribute("form")User form, Model model) {
-//
-//		String name =  service.getUser(form.getId());
-//		form.setName(name);
-//		model.addAttribute("form", form);
-//		return "/response";
-//	}
+		/** allOfの実行 */ 
+		log.info("- allOf start -");
+		// CompletableFutureクラスの生成
+		CompletableFuture<String> futureSample1 = generationService.completedFutureSample("Alice");
+		CompletableFuture<String> futureSample2 = generationService.completedFutureSample("Bob");
+		// 上記で生成した処理にさらに付け足す。
+		CompletableFuture<Void> thenApplySample1 = postProcessingService.thenApplyAndAcceptSample(futureSample1, true);
+		CompletableFuture<Void> thenApplySample2 = postProcessingService.thenApplyAndAcceptSample(futureSample2, false);
 
-	/** リダイレクトで返却する */
-	@RequestMapping(value="/back", method=RequestMethod.POST)
-	public String backBtn() {
-		return "redirect:/test";
+		CompletableFuture.allOf(thenApplySample1, thenApplySample2).join();
+		log.info("- allOf end -");
+
+		/** anyOfの実行 */ 
+		log.info("- anyOf start -");
+		CompletableFuture<String> futureSample3 = generationService.completedFutureSample("Chris");
+		CompletableFuture<String> futureSample4 = generationService.completedFutureSample("Diana");
+		CompletableFuture<Void> thenApplySample3 = postProcessingService.thenAcceptSample(futureSample3, true);
+		CompletableFuture<Void> thenApplySample4 = postProcessingService.thenAcceptSample(futureSample4, false);
+
+		CompletableFuture.anyOf(thenApplySample3, thenApplySample4).join();
+		log.info("- anyOf end -");
+
+		/** exceptionallyの実行 */ 
+		errorHandleService.errorHandle(CompletableFuture.supplyAsync(() -> {throw new NullPointerException("");})).join();
+
+		log.info("==========");
 	}
 }
